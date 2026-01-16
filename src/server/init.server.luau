@@ -1,135 +1,104 @@
--- Script (ServerScriptService)
+-- src/server/init.server.luau
+--[[
+	HEADER:
+
+]]
 local RunService = game:GetService("RunService")
-local NN = require(script.NeuralNetwork)
+local NeuralNetwork = require(script.NeuralNetwork)
 
--- CONFIGURATION
-local POPULATION_SIZE = 20
-local GEN_DURATION = 15 -- Secondes par génération
-local MUTATION_RATE = 0.1
-local MUTATION_POWER = 0.5
+-- --- GAME CONFIG ---
+local SIMULATION_SPEED = 1 -- Upgrade the speed like 5 or 10 to go faster in the simulation
+local GEN_DURATION = 15
+local TARGET = workspace:WaitForChild("Tata")
+local MOB_MODEL = workspace:WaitForChild("Toto")
 
-local Target: Model = workspace:WaitForChild("Tata")
-local MobTemplate = workspace:WaitForChild("Toto")
+-- --- INITIALIZATION ---
+-- Ask the Neural Network module to create a Solver
+local AI_Solver = NeuralNetwork.newSolver({
+	PopulationSize = 20,
+	Structure = { 3, 6, 2 }, -- 3 Inputs -> 6 Neurons (Cachés) -> 2 Outputs
+	MutationRate = 0.1,
+	Elitism = 2,
+})
 
-local Population = {} -- Stocke {Agent = Model, Brain = NN, Fitness = 0}
-local Generation = 1
+local Agents = {} -- Link between 3D model and Brain
 
-local function ResetSimulation(oldBrains)
-	for _, data in ipairs(Population) do
-		if data.Agent then
-			data.Agent:Destroy()
-		end
+-- --- RESET MAP FUNCTION ---
+local function ResetMap()
+	for _, agent in ipairs(Agents) do
+		agent.Model:Destroy()
 	end
-	Population = {}
+	table.clear(Agents)
 
-	for i = 1, POPULATION_SIZE do
-		local mob = MobTemplate:Clone()
-		mob.Name = mob.Name .. i
+	for i = 1, AI_Solver.PopSize do
+		local mob = MOB_MODEL:Clone()
 		mob.Parent = workspace
-		mob:PivotTo(CFrame.new(0, 50, 0)) -- Point de départ fixe (0,5,0)
+		mob:PivotTo(CFrame.new(0, 50, 0))
 
-		-- Si on a des cerveaux de la génération d'avant (oldBrains), on les utilise
-		local brain
-		if oldBrains and #oldBrains > 0 then
-			brain = oldBrains[i]
-		else
-			-- 3 Inputs (DeltaX, DeltaZ, Dist), 4 Neurones cachés, 2 Outputs (MoveX, MoveZ)
-			brain = NN.new({ 3, 4, 2 })
-		end
-
-		table.insert(Population, { Agent = mob, Brain = brain, Fitness = 0 })
+		-- Link Model with its Brain
+		table.insert(Agents, {
+			Model = mob,
+			Brain = AI_Solver:GetGenome(i), -- Get the Neural Network from the Solver
+		})
 	end
 end
 
--- Calcule les inputs pour UN agent
-local function GetInputs(mob)
-	local hrp = mob:FindFirstChild("HumanoidRootPart")
-	if not hrp then
-		return { 0, 0, 0 }
-	end
-
-	local rel = (Target:GetPivot().Position - hrp.Position)
-	-- On normalise (diviser par 100)
-	return {
-		rel.X / 100,
-		rel.Z / 100,
-		math.clamp(rel.Magnitude / 100, 0, 1),
-	}
-end
-
--- Boucle principale
+-- --- MAIN LOOP ---
 task.spawn(function()
-	ResetSimulation(nil) -- Création de la Gen 1
+	ResetMap()
+	local startTime = os.clock()
 
 	while true do
-		local startTime = os.clock()
-		print("--- Generation " .. Generation .. " Started ---")
+		local _ = RunService.Heartbeat:Wait()
 
-		-- BOUCLE DE JEU (Pendant X secondes)
-		while os.clock() - startTime < GEN_DURATION do
-			for _, data in ipairs(Population) do
-				local mob = data.Agent
-				local hum = mob:FindFirstChild("Humanoid")
-				local hrp = mob:FindFirstChild("HumanoidRootPart")
+		-- Manage Generation Timing
+		if os.clock() - startTime > GEN_DURATION then
+			print("Fin de génération. Calcul de l'évolution...")
 
-				if hum and hrp and hum.Health > 0 then
-					-- 1. Réflexion
-					local inputs = GetInputs(mob)
-					local outputs = data.Brain:Predict(inputs)
+			-- One generation passed, ask the Solver to evolve the population
+			local genId, bestScore = AI_Solver:NextGeneration()
 
-					-- 2. Action (MoveX, MoveZ sont entre -1 et 1)
-					local moveDir = Vector3.new(outputs[1], 0, outputs[2])
-					hum:Move(moveDir, false)
+			print(string.format("Gen: %d | Meilleur Score: %.2f", genId, bestScore))
+			ResetMap()
+			startTime = os.clock()
+		end
 
-					-- 3. Fitness (Score) continue
-					local dist = (Target:GetPivot().Position - hrp.Position).Magnitude
-					-- Plus il est proche, plus le score monte.
-					-- Au carré pour pénaliser fortement ceux qui sont loin.
-					local score = 1000 / (dist * dist + 1)
-					data.Fitness = score
+		-- Physic simulation
+		for _, agent in ipairs(Agents) do
+			local hum = agent.Model:FindFirstChild("Humanoid")
+			local hrp = agent.Model:FindFirstChild("HumanoidRootPart")
 
-					-- Si tombé du plateau -> Mort
-					if not hrp or hrp.Position.Y < -10 then
-						hum.Health = 0
-					end
+			if hum and hrp and hum.Health > 0 then
+				-- 1. SENSORS (Perception)
+				local vecToTarget = TARGET:GetPivot().Position - hrp.Position
+				local inputs = {
+					vecToTarget.X / 100, -- Always normalize inputs!
+					vecToTarget.Z / 100,
+					math.tanh(vecToTarget.Magnitude / 50), -- Distance compressed between 0 and 1
+				}
+
+				-- 2. DECISION (Brain)
+				local outputs = agent.Brain:Predict(inputs)
+
+				-- 3. ACTION (Muscles)
+				local moveDir = Vector3.new(outputs[1], 0, outputs[2])
+				hum:Move(moveDir, false)
+
+				-- 4. FITNESS (Fitness)
+				-- IMPORTANT : This is a simple fitness function, you can design your own!
+				local dist = vecToTarget.Magnitude
+				-- Closer is better, so we inverse the distance
+				local score = 1000 / (dist * dist + 0.1)
+
+				-- If the agent fall down, end the simulation for it
+				if hrp.Position.Y < -5 then
+					score = 0
+					hum.Health = 0
 				end
+
+				-- Assign the score to the Brain for evolution purpose
+				agent.Brain.Fitness = score
 			end
-			RunService.Heartbeat:Wait()
 		end
-
-		-- FIN DE GENERATION : SELECTION & REPRODUCTION
-		print("Evolution...")
-
-		-- 1. Trier par Fitness (Meilleurs en premier)
-		table.sort(Population, function(a, b)
-			return a.Fitness > b.Fitness
-		end)
-
-		print("Best Fitness: " .. math.floor(Population[1].Fitness) .. " | From: " .. Population[1].Agent.Name)
-
-		-- 2. Elitisme & Crossover
-		local nextGenBrains = {}
-
-		-- On garde le TOP 2 tel quel (Elitisme pur)
-		table.insert(nextGenBrains, Population[1].Brain)
-		table.insert(nextGenBrains, Population[2].Brain)
-
-		-- Le reste est rempli par des enfants du TOP 50%
-		local survivorCount = math.floor(POPULATION_SIZE / 2)
-
-		while #nextGenBrains < POPULATION_SIZE do
-			-- Choisir 2 parents au hasard parmi les survivants
-			local p1 = Population[math.random(1, survivorCount)].Brain
-			local p2 = Population[math.random(1, survivorCount)].Brain
-
-			-- Faire un enfant
-			local child = p1:Crossover(p2)
-			child:Mutate(MUTATION_RATE, MUTATION_POWER)
-
-			table.insert(nextGenBrains, child)
-		end
-
-		Generation += 1
-		ResetSimulation(nextGenBrains)
 	end
 end)
