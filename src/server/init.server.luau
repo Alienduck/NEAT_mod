@@ -8,7 +8,7 @@ local NeuralNetwork = require(script.NeuralNetwork)
 
 -- --- GAME CONFIG ---
 local SIMULATION_SPEED = 1 -- Upgrade the speed like 5 or 10 to go faster in the simulation
-local GEN_DURATION = 15
+local GEN_DURATION = 15 / SIMULATION_SPEED
 local TARGET = workspace:WaitForChild("Tata")
 local MOB_MODEL = workspace:WaitForChild("Toto")
 
