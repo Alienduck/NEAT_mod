@@ -1,68 +1,104 @@
+-- src/server/init.server.luau
+--[[
+	HEADER:
+
+]]
 local RunService = game:GetService("RunService")
-local CollectionService = game:GetService("CollectionService")
-local Agent = require(script.Agent)
+local NeuralNetwork = require(script.NeuralNetwork)
 
-local Toto = CollectionService:GetTagged("Toto")[1]
-local TotoHumanoid = Toto:FindFirstChildOfClass("Humanoid")
-local Tata = CollectionService:GetTagged("Tata")[1]
+-- --- GAME CONFIG ---
+local SIMULATION_SPEED = 1 -- Upgrade the speed like 5 or 10 to go faster in the simulation
+local GEN_DURATION = 15 / SIMULATION_SPEED
+local TARGET = workspace:WaitForChild("Tata")
+local MOB_MODEL = workspace:WaitForChild("Toto")
 
-local TotoAgent = Agent.new({
-	Inputs = { "DeltaX", "DeltaZ", "Distance" },
-	Outputs = { "MoveX", "MoveZ", "Jump" },
+-- --- INITIALIZATION ---
+-- Ask the Neural Network module to create a Solver
+local AI_Solver = NeuralNetwork.newSolver({
+	PopulationSize = 20,
+	Structure = { 3, 6, 2 }, -- 3 Inputs -> 6 Neurons (Cachés) -> 2 Outputs
+	MutationRate = 0.1,
+	Elitism = 2,
 })
 
-local bestDistance = math.huge
-local bestBrain = TotoAgent:GetWeights() -- On sauvegarde le cerveau initial
-local stepTimer = 0
-local cycleDuration = 20 -- Nombre de frames par test (laisser le temps de bouger)
+local Agents = {} -- Link between 3D model and Brain
 
-local function deepCopy(original)
-	local copy = {}
-	for k, v in pairs(original) do
-		if type(v) == "table" then
-			v = deepCopy(v)
-		end
-		copy[k] = v
+-- --- RESET MAP FUNCTION ---
+local function ResetMap()
+	for _, agent in ipairs(Agents) do
+		agent.Model:Destroy()
 	end
-	return copy
+	table.clear(Agents)
+
+	for i = 1, AI_Solver.PopSize do
+		local mob = MOB_MODEL:Clone()
+		mob.Parent = workspace
+		mob:PivotTo(CFrame.new(0, 50, 0))
+
+		-- Link Model with its Brain
+		table.insert(Agents, {
+			Model = mob,
+			Brain = AI_Solver:GetGenome(i), -- Get the Neural Network from the Solver
+		})
+	end
 end
 
-bestBrain = deepCopy(TotoAgent.Weights)
-
+-- --- MAIN LOOP ---
 task.spawn(function()
-	RunService.Heartbeat:Connect(function()
-		local relative = (Tata:GetPivot().Position - Toto:GetPivot().Position)
-		local dist = relative.Magnitude
+	ResetMap()
+	local startTime = os.clock()
 
-		local inputs = {
-			relative.X / 50,
-			relative.Z / 50,
-			math.clamp(dist / 50, 0, 1),
-		}
+	while true do
+		local _ = RunService.Heartbeat:Wait()
 
-		local decisions = TotoAgent:Decide(inputs)
+		-- Manage Generation Timing
+		if os.clock() - startTime > GEN_DURATION then
+			print("Fin de génération. Calcul de l'évolution...")
 
-		local dir = Vector3.new((decisions["MoveX"] - 0.5) * 2, 0, (decisions["MoveZ"] - 0.5) * 2)
-		if dir.Magnitude > 0.2 then
-			TotoHumanoid:Move(dir, false)
+			-- One generation passed, ask the Solver to evolve the population
+			local genId, bestScore = AI_Solver:NextGeneration()
+
+			print(string.format("Gen: %d | Meilleur Score: %.2f", genId, bestScore))
+			ResetMap()
+			startTime = os.clock()
 		end
 
-		stepTimer += 1
+		-- Physic simulation
+		for _, agent in ipairs(Agents) do
+			local hum = agent.Model:FindFirstChild("Humanoid")
+			local hrp = agent.Model:FindFirstChild("HumanoidRootPart")
 
-		if stepTimer >= cycleDuration then
-			stepTimer = 0
+			if hum and hrp and hum.Health > 0 then
+				-- 1. SENSORS (Perception)
+				local vecToTarget = TARGET:GetPivot().Position - hrp.Position
+				local inputs = {
+					vecToTarget.X / 100, -- Always normalize inputs!
+					vecToTarget.Z / 100,
+					math.tanh(vecToTarget.Magnitude / 50), -- Distance compressed between 0 and 1
+				}
 
-			if dist < bestDistance then
-				print("Progrès ! Dist:", math.floor(dist))
-				bestDistance = dist
+				-- 2. DECISION (Brain)
+				local outputs = agent.Brain:Predict(inputs)
 
-				bestBrain = deepCopy(TotoAgent.Weights)
+				-- 3. ACTION (Muscles)
+				local moveDir = Vector3.new(outputs[1], 0, outputs[2])
+				hum:Move(moveDir, false)
 
-				TotoAgent:Evolve(0.05)
-			else
-				TotoAgent.Weights = deepCopy(bestBrain)
-				TotoAgent:Evolve(0.3) -- Mutation plus forte pour tenter de débloquer
+				-- 4. FITNESS (Fitness)
+				-- IMPORTANT : This is a simple fitness function, you can design your own!
+				local dist = vecToTarget.Magnitude
+				-- Closer is better, so we inverse the distance
+				local score = 1000 / (dist * dist + 0.1)
+
+				-- If the agent fall down, end the simulation for it
+				if hrp.Position.Y < -5 then
+					score = 0
+					hum.Health = 0
+				end
+
+				-- Assign the score to the Brain for evolution purpose
+				agent.Brain.Fitness = score
 			end
 		end
-	end)
+	end
 end)
