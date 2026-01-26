@@ -29,7 +29,7 @@ function Network.new(structure)
 	self.Weights = {}
 	self.Fitness = 0
 
-	-- Initialisation Xavier (Optimised weights to avoid saturation)
+	-- Xavier Initialization (Optimised weights to avoid saturation)
 	for i = 1, #structure - 1 do
 		local layer = {}
 		local inputSize = structure[i]
@@ -61,7 +61,7 @@ function Network:Predict(inputs)
 			for j = 1, prevNeurons do
 				sum += current[j] * layerWeights[(i - 1) * prevNeurons + j]
 			end
-			-- Activation Tanh (Scale number between 1 and -1)
+			-- Tanh Activation (Scale number between 1 and -1)
 			table.insert(nextLayer, math.tanh(sum))
 		end
 		current = nextLayer
@@ -161,7 +161,7 @@ local function Crossover(dad, mum)
 end
 
 -- GO TO NEXT GENERATION
--- Thats here where the module do all the hard work of evolution
+-- This is where the module does all the hard work of evolution
 function Solver:NextGeneration()
 	-- 1. Sort the population by fitness (best first)
 	table.sort(self.Genomes, function(a, b)

@@ -6,12 +6,11 @@ local NeuralNetwork = require(script.NeuralNetwork)
 local Drone = require(script.Drone)
 
 local GEN_TIME = 20
-local POPULATION = 50
+local POPULATION = 150
 local DroneModel = ServerStorage:WaitForChild("Drone")
 local SpawnPoint = workspace:WaitForChild("SpawnPoint")
 
--- 3 Sorties seulement : Vitesse, Yaw, Pitch (Le tir est automatique)
--- Dans src/server/init.server.luau
+-- 3 Outputs only: Speed, Yaw, Pitch (Firing is automatic)
 local AI_Solver = NeuralNetwork.newSolver({
 	PopulationSize = POPULATION,
 	Structure = { 5, 12, 3 },
@@ -26,7 +25,7 @@ local function StartGeneration()
 		drone:Destroy()
 	end
 	table.clear(ActiveDrones)
-	print("--- DÉBUT GÉNÉRATION " .. AI_Solver.Generation .. " ---")
+	print("--- START GENERATION " .. AI_Solver.Generation .. " ---")
 
 	for i = 1, POPULATION do
 		local modelClone = DroneModel:Clone()
@@ -49,7 +48,7 @@ task.spawn(function()
 
 		if os.clock() - genStartTime > GEN_TIME then
 			local genId, bestScore = AI_Solver:NextGeneration()
-			print("Fin Gen " .. (genId - 1) .. " | Best Score: " .. math.floor(bestScore))
+			print("End Gen " .. (genId - 1) .. " | Best Score: " .. math.floor(bestScore))
 			StartGeneration()
 			genStartTime = os.clock()
 		end

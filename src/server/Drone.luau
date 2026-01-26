@@ -4,13 +4,13 @@ Drone.__index = Drone
 
 local CONFIG = {
 	MAX_SPEED = 30,
-	TURN_SPEED = 6, -- Augmenté pour tracker les joueurs rapides
-	PITCH_SPEED = 3, -- Augmenté pour lever/baisser la tête plus vite
+	TURN_SPEED = 6, -- Increased to track fast players
+	PITCH_SPEED = 3, -- Increased to raise/lower head faster
 	VISION_RANGE = 1000,
 	FLIGHT_HEIGHT = 8,
 }
 
--- Fonction utilitaire pour lisser (Lerp)
+-- Utility function for smoothing (Lerp)
 local function Lerp(a, b, t)
 	return a + (b - a) * t
 end
@@ -25,15 +25,15 @@ function Drone.new(model: Model, brain)
 	self.CurrentHealth = self.Humanoid.Health
 	self.LastShot = 0
 
-	-- Variables pour le lissage
+	-- Smoothing variables
 	self.SmoothYaw = 0
 	self.SmoothPitch = 0
 	self.SmoothSpeed = 0
 
 	local gyro = Instance.new("BodyGyro")
 	gyro.MaxTorque = Vector3.new(400000, 400000, 400000)
-	gyro.P = 4000 -- Plus rigide
-	gyro.D = 400 -- Moins d'amortissement pour plus de réactivité
+	gyro.P = 4000 -- Stiffer
+	gyro.D = 400 -- Less damping for more responsiveness
 	gyro.CFrame = self.RootPart.CFrame
 	gyro.Parent = self.RootPart
 	self.Gyro = gyro
@@ -76,11 +76,11 @@ function Drone:GetInputs(targetRoot)
 	end
 
 	return {
-		localDir.X, -- 1: Erreur Gauche/Droite (-1 à 1)
-		localDir.Y, -- 2: Erreur Haut/Bas (-1 à 1)
-		localDir.Z, -- 3: Devant/Derrière
+		localDir.X, -- 1: Left/Right Error (-1 to 1)
+		localDir.Y, -- 2: Up/Down Error (-1 to 1)
+		localDir.Z, -- 3: Front/Back
 		math.tanh(dist / 100), -- 4: Distance
-		wallAhead, -- 5: Mur
+		wallAhead, -- 5: Wall
 	}
 end
 
@@ -98,9 +98,9 @@ function Drone:Update(dt, targetPlayer)
 	local outputs = self.Brain:Predict(inputs)
 
 	-- ====================================================
-	-- 1. STABILISATION (PLUS RÉACTIVE)
+	-- 1. STABILIZATION (MORE REACTIVE)
 	-- ====================================================
-	-- On augmente le facteur (0.4) pour que le drone réagisse plus vite aux ordres du cerveau
+	-- Increasing the factor (0.4) so the drone reacts faster to brain commands
 	self.SmoothYaw = Lerp(self.SmoothYaw, outputs[2], 0.4)
 	self.SmoothPitch = Lerp(self.SmoothPitch, outputs[3], 0.4)
 	self.SmoothSpeed = Lerp(self.SmoothSpeed, outputs[1], 0.2)
@@ -112,7 +112,7 @@ function Drone:Update(dt, targetPlayer)
 
 	local forwardSpeed = self.SmoothSpeed * CONFIG.MAX_SPEED
 
-	-- Gestion Altitude (Plus ferme)
+	-- Altitude Management (Stiffer)
 	local currentHeight = self.RootPart.Position.Y
 	local heightError = (CONFIG.FLIGHT_HEIGHT - currentHeight)
 	local verticalForce = math.clamp(heightError * 8, -30, 30)
@@ -121,35 +121,35 @@ function Drone:Update(dt, targetPlayer)
 	self.Motor.Velocity = Vector3.new(moveVector.X, verticalForce, moveVector.Z)
 
 	-- ====================================================
-	-- 2. LOGIQUE DE FITNESS AMÉLIORÉE (GRADIENT)
+	-- 2. IMPROVED FITNESS LOGIC (GRADIENT)
 	-- ====================================================
 	if targetRoot then
 		local dist = (targetRoot.Position - self.RootPart.Position).Magnitude
 
-		-- ALIGNEMENT
-		local alignmentX = math.abs(inputs[1]) -- 0 = parfait, 1 = mauvais
+		-- ALIGNMENT
+		local alignmentX = math.abs(inputs[1]) -- 0 = perfect, 1 = bad
 		local alignmentY = math.abs(inputs[2])
 		local isFacing = inputs[3] < 0
 
-		-- RECOMPENSE PROGRESSIVE (C'est la clé !)
-		-- Au lieu de récompenser SI < 0.15, on récompense "Plus tu es proche de 0, plus tu gagnes"
-		-- (1 - alignment) donne 1.0 si parfait, 0.5 si moyen, 0.0 si à 90 degrés
+		-- PROGRESSIVE REWARD (This is key!)
+		-- Instead of rewarding IF < 0.15, we reward "The closer you are to 0, the more you gain"
+		-- (1 - alignment) gives 1.0 if perfect, 0.5 if average, 0.0 if at 90 degrees
 		if isFacing then
 			local aimQuality = (1 - alignmentX) * (1 - alignmentY)
-			-- Récompense continue pour encourager à affiner la visée
+			-- Continuous reward to encourage aiming refinement
 			self.Brain.Fitness += aimQuality * 0.2
 		end
 
-		-- CONDITION DE TIR STRICTE
-		-- On tire seulement si on est VRAIMENT bien aligné (< 0.1)
+		-- STRICT FIRING CONDITION
+		-- We fire only if REALLY well aligned (< 0.1)
 		if alignmentX < 0.1 and alignmentY < 0.1 and isFacing and (os.clock() - self.LastShot > 0.5) then
 			self:Fire()
 			self.LastShot = os.clock()
 		end
 
-		-- GESTION DE LA DISTANCE
+		-- DISTANCE MANAGEMENT
 		if dist > 80 then
-			self.Brain.Fitness -= 0.1 -- Punition plus forte pour le camping
+			self.Brain.Fitness -= 0.1 -- Stronger punishment for camping
 		elseif dist < 15 then
 			self.Brain.Fitness -= 0.05
 		else
@@ -163,7 +163,7 @@ function Drone:Fire()
 	local dir = self.Eye.CFrame.LookVector
 
 	local laser = Instance.new("Part")
-	laser.Size = Vector3.new(0.2, 0.2, 8) -- Laser plus long
+	laser.Size = Vector3.new(0.2, 0.2, 8) -- Longer laser
 	laser.Color = Color3.fromRGB(255, 0, 50)
 	laser.Material = Enum.Material.Neon
 	laser.Anchored = true
@@ -182,12 +182,12 @@ function Drone:Fire()
 			local hum = char.Humanoid
 			self.Brain.Fitness += 30
 			if hum.Health > 0 then
-				self.Brain.Fitness += 150 -- Enorme bonus pour toucher
+				self.Brain.Fitness += 150 -- Huge bonus for hitting
 				hum:TakeDamage(10)
 			end
 		end
 	else
-		-- Punition légère pour tir raté (pour qu'il n'arrête pas de tirer, mais qu'il préfère toucher)
+		-- Light punishment for missed shot (so it doesn't stop firing, but prefers hitting)
 		self.Brain.Fitness -= 2
 	end
 end
@@ -201,7 +201,7 @@ function Drone:TakeDamage(newHealth)
 	end
 
 	if newHealth <= 0 then
-		self.Brain.Fitness -= 100 -- Punition de mort sévère
+		self.Brain.Fitness -= 100 -- Severe death punishment
 		self.RootPart.Anchored = false
 		self.Motor:Destroy()
 		self.Gyro:Destroy()
