@@ -1,104 +1,59 @@
--- src/server/init.server.luau
---[[
-	HEADER:
-
-]]
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
+
 local NeuralNetwork = require(script.NeuralNetwork)
+local Drone = require(script.Drone)
 
--- --- GAME CONFIG ---
-local SIMULATION_SPEED = 1 -- Upgrade the speed like 5 or 10 to go faster in the simulation
-local GEN_DURATION = 15 / SIMULATION_SPEED
-local TARGET = workspace:WaitForChild("Tata")
-local MOB_MODEL = workspace:WaitForChild("Toto")
+local GEN_TIME = 20
+local POPULATION = 15
+local DroneModel = ServerStorage:WaitForChild("Drone")
+local SpawnPoint = workspace:WaitForChild("SpawnPoint")
 
--- --- INITIALIZATION ---
--- Ask the Neural Network module to create a Solver
+-- 3 Sorties seulement : Vitesse, Yaw, Pitch (Le tir est automatique)
 local AI_Solver = NeuralNetwork.newSolver({
-	PopulationSize = 20,
-	Structure = { 3, 6, 2 }, -- 3 Inputs -> 6 Neurons (Cachés) -> 2 Outputs
+	PopulationSize = POPULATION,
+	Structure = { 5, 8, 3 }, 
 	MutationRate = 0.1,
 	Elitism = 2,
 })
 
-local Agents = {} -- Link between 3D model and Brain
+local ActiveDrones = {}
 
--- --- RESET MAP FUNCTION ---
-local function ResetMap()
-	for _, agent in ipairs(Agents) do
-		agent.Model:Destroy()
-	end
-	table.clear(Agents)
+local function StartGeneration()
+	for _, drone in ipairs(ActiveDrones) do drone:Destroy() end
+	table.clear(ActiveDrones)
+	print("--- DÉBUT GÉNÉRATION " .. AI_Solver.Generation .. " ---")
 
-	for i = 1, AI_Solver.PopSize do
-		local mob = MOB_MODEL:Clone()
-		mob.Parent = workspace
-		mob:PivotTo(CFrame.new(0, 50, 0))
+	for i = 1, POPULATION do
+		local modelClone = DroneModel:Clone()
+		modelClone.Parent = workspace
+		local offset = Vector3.new(math.random(-30, 30), 10, math.random(-30, 30))
+		modelClone:PivotTo(SpawnPoint.CFrame * CFrame.new(offset))
 
-		-- Link Model with its Brain
-		table.insert(Agents, {
-			Model = mob,
-			Brain = AI_Solver:GetGenome(i), -- Get the Neural Network from the Solver
-		})
+		local brain = AI_Solver:GetGenome(i)
+		local newDrone = Drone.new(modelClone, brain)
+		table.insert(ActiveDrones, newDrone)
 	end
 end
 
--- --- MAIN LOOP ---
 task.spawn(function()
-	ResetMap()
-	local startTime = os.clock()
+	StartGeneration()
+	local genStartTime = os.clock()
 
 	while true do
-		local _ = RunService.Heartbeat:Wait()
+		local dt = RunService.Heartbeat:Wait()
 
-		-- Manage Generation Timing
-		if os.clock() - startTime > GEN_DURATION then
-			print("Fin de génération. Calcul de l'évolution...")
-
-			-- One generation passed, ask the Solver to evolve the population
+		if os.clock() - genStartTime > GEN_TIME then
 			local genId, bestScore = AI_Solver:NextGeneration()
-
-			print(string.format("Gen: %d | Meilleur Score: %.2f", genId, bestScore))
-			ResetMap()
-			startTime = os.clock()
+			print("Fin Gen " .. (genId - 1) .. " | Best Score: " .. math.floor(bestScore))
+			StartGeneration()
+			genStartTime = os.clock()
 		end
 
-		-- Physic simulation
-		for _, agent in ipairs(Agents) do
-			local hum = agent.Model:FindFirstChild("Humanoid")
-			local hrp = agent.Model:FindFirstChild("HumanoidRootPart")
-
-			if hum and hrp and hum.Health > 0 then
-				-- 1. SENSORS (Perception)
-				local vecToTarget = TARGET:GetPivot().Position - hrp.Position
-				local inputs = {
-					vecToTarget.X / 100, -- Always normalize inputs!
-					vecToTarget.Z / 100,
-					math.tanh(vecToTarget.Magnitude / 50), -- Distance compressed between 0 and 1
-				}
-
-				-- 2. DECISION (Brain)
-				local outputs = agent.Brain:Predict(inputs)
-
-				-- 3. ACTION (Muscles)
-				local moveDir = Vector3.new(outputs[1], 0, outputs[2])
-				hum:Move(moveDir, false)
-
-				-- 4. FITNESS (Fitness)
-				-- IMPORTANT : This is a simple fitness function, you can design your own!
-				local dist = vecToTarget.Magnitude
-				-- Closer is better, so we inverse the distance
-				local score = 1000 / (dist * dist + 0.1)
-
-				-- If the agent fall down, end the simulation for it
-				if hrp.Position.Y < -5 then
-					score = 0
-					hum.Health = 0
-				end
-
-				-- Assign the score to the Brain for evolution purpose
-				agent.Brain.Fitness = score
-			end
+		local target = Players:GetPlayers()[1]
+		for _, drone in ipairs(ActiveDrones) do
+			drone:Update(dt, target)
 		end
 	end
 end)
