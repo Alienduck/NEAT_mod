@@ -96,8 +96,7 @@ export type Solver = {
     @return Solver
 ]]
 function NeuralNetwork.newSolver(config: SolverConfig): Solver
-	local self: Solver = {} :: Solver
-	setmetatable({}, Solver)
+	local self = setmetatable({}, Solver)
 	self.PopSize = config.PopulationSize or 20
 	self.Structure = config.Structure or { 3, 5, 2 }
 	self.MutationRate = config.MutationRate or 0.1
