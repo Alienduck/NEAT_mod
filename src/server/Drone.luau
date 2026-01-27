@@ -115,8 +115,15 @@ function Drone:Update(dt, targetPlayer)
 	local forwardSpeed = self.SmoothSpeed * CONFIG.MAX_SPEED
 
 	-- Altitude Management (Stiffer)
+	-- Raycast to find ground height
+	local groundHit = workspace:Raycast(self.RootPart.Position, Vector3.new(0, -100, 0), self.RayParams)
+	local targetHeight = CONFIG.FLIGHT_HEIGHT
+	if groundHit then
+		targetHeight = groundHit.Position.Y + CONFIG.FLIGHT_HEIGHT
+	end
+
 	local currentHeight = self.RootPart.Position.Y
-	local heightError = (CONFIG.FLIGHT_HEIGHT - currentHeight)
+	local heightError = (targetHeight - currentHeight)
 	local verticalForce = math.clamp(heightError * 8, -30, 30)
 
 	local moveVector = self.RootPart.CFrame.LookVector * forwardSpeed
