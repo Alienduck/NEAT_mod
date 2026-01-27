@@ -47,6 +47,10 @@ function Drone.new(model: Model, brain)
 	self.Humanoid.HealthChanged:Connect(function(h)
 		self:TakeDamage(h)
 	end)
+
+	self.RayParams = RaycastParams.new()
+	self.RayParams.FilterDescendantsInstances = { self.Model }
+	self.RayParams.FilterType = Enum.RaycastFilterType.Exclude
 	return self
 end
 
@@ -68,9 +72,7 @@ function Drone:GetInputs(targetRoot)
 	local dist = localTarget.Magnitude
 
 	local wallAhead = 0
-	local rayParams = RaycastParams.new()
-	rayParams.FilterDescendantsInstances = { self.Model }
-	local wallHit = workspace:Raycast(self.Eye.Position, myCFrame.LookVector * 20, rayParams)
+	local wallHit = workspace:Raycast(self.Eye.Position, myCFrame.LookVector * 20, self.RayParams)
 	if wallHit then
 		wallAhead = 1
 	end
@@ -172,9 +174,7 @@ function Drone:Fire()
 	laser.Parent = workspace
 	game.Debris:AddItem(laser, 0.1)
 
-	local params = RaycastParams.new()
-	params.FilterDescendantsInstances = { self.Model }
-	local hit = workspace:Raycast(origin, dir * CONFIG.VISION_RANGE, params)
+	local hit = workspace:Raycast(origin, dir * CONFIG.VISION_RANGE, self.RayParams)
 
 	if hit and hit.Instance and hit.Instance.Parent and hit.Instance.Parent:FindFirstChild("Humanoid") then
 		local char = hit.Instance.Parent

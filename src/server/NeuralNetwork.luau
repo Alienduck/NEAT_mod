@@ -36,7 +36,7 @@ function Network.new(structure)
 		local outputSize = structure[i + 1]
 		local scale = math.sqrt(6 / (inputSize + outputSize)) -- Seems weird but necessary, it's just scale
 
-		for _ = 1, inputSize * outputSize do
+		for _ = 1, (inputSize + 1) * outputSize do -- +1 for Bias
 			table.insert(layer, (math.random() * 2 - 1) * scale)
 		end
 		table.insert(self.Weights, layer)
@@ -55,12 +55,15 @@ function Network:Predict(inputs)
 		local nextLayer = table.create(self.Structure[l + 1])
 		local prevNeurons = #current
 		local outputNeurons = self.Structure[l + 1]
+		local inputWidth = prevNeurons + 1 -- +1 for Bias
 
 		for i = 1, outputNeurons do
 			local sum = 0
 			for j = 1, prevNeurons do
-				sum += current[j] * layerWeights[(i - 1) * prevNeurons + j]
+				sum += current[j] * layerWeights[(i - 1) * inputWidth + j]
 			end
+			-- Add Bias (The weight associated with the "1" neuron)
+			sum += layerWeights[(i - 1) * inputWidth + inputWidth]
 			-- Tanh Activation (Scale number between 1 and -1)
 			table.insert(nextLayer, math.tanh(sum))
 		end

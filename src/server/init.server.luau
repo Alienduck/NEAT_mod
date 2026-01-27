@@ -53,7 +53,8 @@ task.spawn(function()
 			genStartTime = os.clock()
 		end
 
-		local target = Players:GetPlayers()[1]
+		local players = Players:GetPlayers()
+		local target = players[1]
 		for _, drone in ipairs(ActiveDrones) do
 			drone:Update(dt, target)
 		end
